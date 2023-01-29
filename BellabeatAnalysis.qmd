@@ -1,0 +1,226 @@
+---
+title: "Bellabeat"
+author: "Nicolae Oana-Sorina, Neagu Andreea-Maria, Necula Mihaela-Diana"
+format: html
+editor: visual
+---
+
+## Bellabeat
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+library (tidyverse)
+library (ggplot2)
+library (scales)
+install.packages("corrplot")
+library(corrplot)
+install.packages("PerformanceAnalytics")
+library(PerformanceAnalytics)
+library(scales)  
+install.packages("highcharter")
+library(highcharter)
+install.packages("contrib.url")
+
+
+daily_activity <- read.csv(file="dailyActivity_merged.csv", head=TRUE,sep= "," )
+View(daily_activity)
+
+#statistici descriptive
+attach(daily_activity)
+summary(daily_activity[,3:4])
+summary(daily_activity[,11:12])
+summary(daily_activity[,13:15])
+
+
+#format
+daily_activity <- daily_activity %>% 
+  rename(Date = ActivityDate) %>% 
+  mutate(Date = as.Date(Date, format = "%m/%d/%y"))
+View(daily_activity)
+
+#stergere TrackerDistance
+final_df <- daily_activity %>% select(-c(TrackerDistance))
+View(final_df)
+
+
+#matrice corelatie
+matr_corelatie<-cor(daily_activity[,3:15])
+corrplot(matr_corelatie, method=c("circle"), type=c("upper"))
+
+
+#boxplot
+par(mfrow=c(2,2))
+boxplot(daily_activity$TotalSteps,main="Boxplot numar total de pasi",col="aquamarine3")
+boxplot(daily_activity$TotalDistance,main="Boxplot distante",col="pink")
+boxplot(daily_activity$Calories,main="Boxplot calorii",col="red")
+
+
+#histograma
+chart.Correlation(final_df[,3:14],histogram = TRUE,pch=19)
+
+
+#dependente intre variabile
+par(mfrow=c(1,2))
+plot(final_df$TotalSteps, final_df$Calories, main="Calorii arse in functie de numarul total de pasi")
+abline(lm(final_df$Calories~final_df$TotalSteps), col="red")
+
+plot(final_df$SedentaryMinutes, final_df$Calories, col="blue", main="Calorii arse in functie de distanta totala parcursa")
+abline(lm(final_df$Calories~final_df$SedentaryMinutes), col="red")
+
+
+install.packages("kohonen")
+library(kohonen)
+
+daily_average <- daily_activity %>%
+  group_by(Id) %>%
+  summarise (mean_daily_steps = mean(TotalSteps), mean_daily_calories = mean(Calories))
+
+head(daily_average)
+
+user_type <- daily_average %>%
+  mutate(user_type = case_when(
+    mean_daily_steps < 5000 ~ "sedentary",
+    mean_daily_steps >= 5000 & mean_daily_steps < 7499 ~ "lightly active", 
+    mean_daily_steps >= 7500 & mean_daily_steps < 9999 ~ "fairly active", 
+    mean_daily_steps >= 10000 ~ "very active"
+  ))
+
+View(user_type)
+
+user_type_percent <- user_type %>%
+  group_by(user_type) %>%
+  summarise(total = n()) %>%
+  mutate(totals = sum(total)) %>%
+  group_by(user_type) %>%
+  summarise(total_percent = total / totals) %>%
+  mutate(labels = scales::percent(total_percent))
+
+user_type_percent$user_type <- factor(user_type_percent$user_type , levels = c("very active", "fairly active", "lightly active", "sedentary"))
+
+
+head(user_type_percent)
+
+user_type_percent %>%
+  ggplot(aes(x="",y=total_percent, fill=user_type)) +
+  geom_bar(stat = "identity", width = 1)+
+  coord_polar("y", start=0)+
+  theme_minimal()+
+  theme(axis.title.x= element_blank(),
+        axis.title.y = element_blank(),
+        panel.border = element_blank(), 
+        panel.grid = element_blank(), 
+        axis.ticks = element_blank(),
+        axis.text.x = element_blank(),
+        plot.title = element_text(hjust = 0.5, size=14, face = "bold")) +
+  scale_fill_manual(values = c("#85e085","#e6e600", "#ffd480", "#ff8080")) +
+  geom_text(aes(label = labels),
+            position = position_stack(vjust = 0.5))+
+  labs(title="User type distribution")
+
+weekday_steps <- daily_activity %>%
+  mutate(weekday = weekdays(Date))
+
+weekday_steps$weekday <-ordered(weekday_steps$weekday, levels=c("Monday", "Tuesday", "Wednesday", "Thursday",
+"Friday", "Saturday", "Sunday"))
+
+ weekday_steps <-weekday_steps%>%
+  group_by(weekday) %>%
+  summarize (daily_steps = mean(TotalSteps), daily_distance = mean(TotalDistance))
+
+head(weekday_steps)
+
+
+
+final_df %>% 
+  mutate(weekdays = weekdays(Date)) %>% 
+  select(weekdays, TotalSteps) %>% 
+  mutate(weekdays = factor(weekdays, levels = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'))) %>% 
+  drop_na() %>% 
+  ggplot(aes(weekdays, TotalSteps, fill = weekdays)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Set2") +
+  theme(legend.position="none") +
+  labs(
+    title = "Users' activity by day",
+    x = "Day of the week",
+    y = "Steps",
+    caption = 'Data Source: FitBit Fitness Tracker Data'
+  )
+
+#harti SOM
+
+daily_activity <- within(daily_activity, {
+ Calories_byday <- NA # need to initialize variable
+ Calories_byday[daily_activity$Calories<=500] <- "Sedentary"
+ Calories_byday[500<daily_activity$Calories & daily_activity$Calories<=2000] <- "Lightly active"
+ Calories_byday[2000<daily_activity$Calories & daily_activity$Calories<=3000] <- "Fairly active"
+ Calories_byday[daily_activity$Calories>3000] <- "Very active"
+} )
+
+View(daily_activity)
+train.obs<-sample(nrow(daily_activity), 752)
+train.obs
+date_som<-daily_activity[,3:15]
+View(date_som)
+train.set<-scale(date_som[train.obs,][,-13]) 
+train.set
+center = attr(train.set, "scaled:center")
+scale = attr(train.set, "scaled:scale")
+test.set<-scale(date_som[-train.obs, ][,-13], center = attr(train.set, "scaled:center"),scale
+= attr(train.set, "scaled:scale"))
+# setul de testare se normalizeaza cu media si abaterea standard a setului
+# de antrenare
+test.set
+# harta som cu 3*2=6 clustere
+somexemplu <- som(train.set, grid = somgrid(3, 2, "hexagonal"))
+windows()
+plot(somexemplu)
+#Etichetarea clusterelor cu numele clasei
+
+#windows()
+#plot(somexemplu, type="mapping", labels = as.factor(dat$Calories_byday), main = "mapping
+#plot")
+somprediction<-predict(somexemplu, newdata=test.set, trainX=train.set)
+somprediction
+somprediction$unit.classif # vectorul de clusterizare
+# nicio observatie din setul de testare nu a fost incadrata in clusterul 3
+data.frame(somprediction$unit.classif)
+data <- data.frame(df[,-1],
+                   row.names = df[,1])
+View(data)
+type<-rownames(data)
+type
+
+id_unic<-paste(daily_activity$Id,daily_activity$Date,sep="-")
+
+
+df<-data.frame(id_unic, daily_activity[,3:15])
+View(df)
+View(daily_activity)
+
+data<-data.frame(data, daily_activity[,16])
+View(data)
+testset<-type[-train.obs]
+testset
+data.frame(testset,somprediction$unit.classif)
+nb<-table(somprediction$unit.classif)
+nb
+testset<-data[-train.obs,14]
+testset
+
+names(data)[14] <- 'calories_byday'
+
+View(data)
+daily_activ<-daily_activity[,3:16]
+View(daily_activ)
+tab<- table(data[-train.obs,]$calories_byday,somprediction$unit.classif)
+tab
+
+```
+
+\`\`\`
